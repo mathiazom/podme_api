@@ -181,12 +181,10 @@ class PodMeDefaultAuthClient(PodMeAuthClient):
             PodMeApiAuthenticationError: If no user credentials are provided.
 
         """
-        if not self._credentials:
+        if not self._credentials or self._credentials.is_expired():
             if not self.user_credentials:
                 raise PodMeApiAuthenticationError("No user credentials provided")
             credentials = await self.authorize(self.user_credentials)
-        elif self._credentials.is_expired():
-            credentials = await self.refresh_token()
         else:
             credentials = self._credentials
         return credentials.access_token

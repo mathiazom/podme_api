@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from mashumaro import field_options
 
@@ -21,27 +21,17 @@ class SchibstedCredentials(BaseDataClassORJSONMixin):
     """Represents Schibsted authentication credentials."""
 
     scope: str
-    user_id: str
-    is_admin: bool
     token_type: str
     access_token: str
-    refresh_token: str
     expires_in: int
     id_token: str
-    server_time: datetime = field(
-        metadata=field_options(
-            deserialize=datetime.fromtimestamp,
-            serialize=lambda v: int(datetime.timestamp(v)),
-        )
-    )
-    expiration_time: datetime = field(
-        metadata=field_options(
-            deserialize=datetime.fromtimestamp,
-            serialize=lambda v: int(datetime.timestamp(v)),
-        )
-    )
+    expiration_time: datetime = field(init=False)
     account_created: bool | None = field(default=None, metadata=field_options(alias="accountCreated"))
     email: str | None = None
+
+    def __post_init__(self):
+        # TODO: conservative assumption that 'expires_in' is in seconds, should be verified...
+        self.expiration_time = datetime.now(timezone.utc) + timedelta(seconds=self.expires_in)
 
     def is_expired(self):
         return datetime.now(tz=timezone.utc) > self.expiration_time.astimezone(tz=timezone.utc)
