@@ -1035,9 +1035,8 @@ class PodMeClient:
         """Close open client session."""
         if self.session and self._close_session:
             await self.session.close()
-        # TODO: re-introduce credentials storage once refresh token is available
-        # if not self.disable_credentials_storage:
-        #     await self.save_credentials()
+        if not self.disable_credentials_storage:
+            await self.save_credentials()
 
     async def __aenter__(self) -> Self:
         """Async enter."""
