@@ -153,6 +153,7 @@ class PodMeClient:
         uri: str,
         method: str = METH_GET,
         retry: int = 0,
+        full_uri: str | None = None,
         **kwargs,
     ) -> str | dict | list | bool | None:
         """Make a request to the PodMe API.
@@ -171,7 +172,7 @@ class PodMeClient:
             The response data from the API.
 
         """
-        url = URL(f"{PODME_API_URL.strip('/')}/").join(URL(uri))
+        url = URL(f"{PODME_API_URL.strip('/')}/").join(URL(uri)) if full_uri is None else URL(full_uri)
 
         access_token = await self.auth_client.async_get_access_token()
         headers = {
@@ -423,7 +424,9 @@ class PodMeClient:
         self._ensure_session()
 
         try:
-            resp = await self.session.get(download_url, raise_for_status=True)
+            resp = await self.session.get(download_url, raise_for_status=True, headers={
+                "User-Agent":"Podme android app/6.29.3 (Linux;Android 15) AndroidXMedia3/1.5.1"
+            })
             total_size = int(resp.headers.get("Content-Length", 0))
             on_progress(PodMeDownloadProgressTask.DOWNLOAD_FILE, str(download_url), 0, total_size)
             current_size = 0
@@ -495,8 +498,9 @@ class PodMeClient:
             episode_data = await self.get_episode_info(episode)
         if episode_data.stream_url is None:
             raise PodMeApiStreamUrlError(f"No stream URL found for episode {episode_data.id}")
-        info = await self.resolve_stream_url(URL(episode_data.stream_url))
-        return episode_data.id, URL(info["url"])
+        # info = await self.resolve_stream_url(URL(episode_data.stream_url))
+        # return episode_data.id, URL(info["url"])
+        return episode_data.id, URL(episode_data.stream_url)
 
     async def get_episode_download_url_bulk(
         self,
@@ -815,10 +819,15 @@ class PodMeClient:
             episode_id (int): The ID of the episode.
 
         """
+        # TODO: USE ACTUAL EPISODE ID! (and probably an episode id...)
         data = await self._request(
-            f"episode/{episode_id}",
+            f"", METH_GET, 0,f"https://api.podme.com/mobile/api/v2/episodes/podcast/3037?page=0&pageSize=50&orderBy=0",
         )
-        return PodMeEpisode.from_dict(data)
+        print("DATA", data)
+        data = data[0]
+        episode = PodMeEpisode.from_dict(data)
+        episode.stream_url = data['url']
+        return episode
 
     async def get_episodes_info(self, episode_ids: list[int]) -> list[PodMeEpisode]:
         """Get information about multiple episodes.
@@ -922,14 +931,18 @@ class PodMeClient:
         _LOGGER.debug("Checking stream URL: <%s>", stream_url)
 
         # Check if the audio URL is directly downloadable
-        response = await self.session.get(stream_url)
+        response = await self.session.get(stream_url, headers={
+                "User-Agent":"Podme android app/6.29.3 (Linux;Android 15) AndroidXMedia3/1.5.1"
+            })
         # Needed for acast.com, which redirects to an URL containing @ instead of %40.
         if "@" in response.url.query_string:
             stream_url = URL(str(response.url).replace("@", "%40"), encoded=True)
         else:
             stream_url = response.url
 
-        response = await self.session.head(stream_url, allow_redirects=True)
+        response = await self.session.head(stream_url, allow_redirects=True, headers={
+                "User-Agent":"Podme android app/6.29.3 (Linux;Android 15) AndroidXMedia3/1.5.1"
+            })
         if response.status != HTTPStatus.OK:
             raise PodMeApiStreamUrlError(f"Stream URL is not downloadable: <{stream_url}>")
         content_length = response.headers.get("Content-Length")
@@ -977,13 +990,15 @@ class PodMeClient:
         _LOGGER.debug("Resolving m3u8 URL: <%s>", master_url)
 
         # Fetch master.m3u8
-        response = await self.session.get(master_url)
+        response = await self.session.get(master_url, headers={
+                "User-Agent":"Podme android app/6.29.3 (Linux;Android 15) AndroidXMedia3/1.5.1"
+            })
         master_content = await response.text()
 
         # Parse master.m3u8 to get the audio playlist URL (first match only).
         audio_playlist_url: URL | None = None
         for line in master_content.splitlines():
-            if line.endswith(".m3u8"):
+            if ".m3u8" in line:
                 audio_playlist_url = master_url.join(URL(line.strip()))
                 break
 
@@ -991,7 +1006,9 @@ class PodMeClient:
             raise PodMeApiPlaylistUrlNotFoundError(f"Could not find audio playlist URL in <{master_url}>")
 
         # Fetch audio playlist
-        response = await self.session.get(audio_playlist_url)
+        response = await self.session.get(audio_playlist_url, headers={
+                "User-Agent":"Podme android app/6.29.3 (Linux;Android 15) AndroidXMedia3/1.5.1"
+            })
         audio_playlist_content = await response.text()
 
         # Parse audio playlist to get the audio segment URL
